@@ -11,7 +11,7 @@ interface Node {
 interface Edge {
   u: string;
   v: string;
-  weight: number; // ✅ add this field
+  weight: number;
 }
 
 interface GraphData {
