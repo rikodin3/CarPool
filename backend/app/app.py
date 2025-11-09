@@ -6,20 +6,19 @@ from typing import List, Dict, Any
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-# ---------------- GRAPH ----------------
 SAMPLE_GRAPH = {
     'nodes': [
-        {'id': 'A', 'name': 'Downtown', 'lat': 40.7128, 'lng': -74.0060},
-        {'id': 'B', 'name': 'Midtown', 'lat': 40.7580, 'lng': -73.9855},
-        {'id': 'C', 'name': 'Uptown', 'lat': 40.7829, 'lng': -73.9850},
-        {'id': 'D', 'name': 'West Side', 'lat': 40.7489, 'lng': -74.0020},
-        {'id': 'E', 'name': 'East Side', 'lat': 40.7489, 'lng': -73.9680},
-        {'id': 'F', 'name': 'North End', 'lat': 40.8000, 'lng': -73.9500},
-        {'id': 'G', 'name': 'South End', 'lat': 40.7000, 'lng': -74.0100},
-        {'id': 'H', 'name': 'Harbor', 'lat': 40.7050, 'lng': -74.0200},
-        {'id': 'I', 'name': 'Central Park', 'lat': 40.7711, 'lng': -73.9742},
-        {'id': 'J', 'name': 'Brooklyn Edge', 'lat': 40.6900, 'lng': -73.9900},
-        {'id': 'K', 'name': 'Queens Bridge', 'lat': 40.7570, 'lng': -73.9550},
+        {'id': 'A', 'name': 'A', 'lat': 40.7128, 'lng': -74.0060},
+        {'id': 'B', 'name': 'B', 'lat': 40.7580, 'lng': -73.9855},
+        {'id': 'C', 'name': 'C', 'lat': 40.7829, 'lng': -73.9850},
+        {'id': 'D', 'name': 'D', 'lat': 40.7489, 'lng': -74.0020},
+        {'id': 'E', 'name': 'E', 'lat': 40.7489, 'lng': -73.9680},
+        {'id': 'F', 'name': 'F', 'lat': 40.8000, 'lng': -73.9500},
+        {'id': 'G', 'name': 'G', 'lat': 40.7000, 'lng': -74.0100},
+        {'id': 'H', 'name': 'H', 'lat': 40.7050, 'lng': -74.0200},
+        {'id': 'I', 'name': 'I', 'lat': 40.7711, 'lng': -73.9742},
+        {'id': 'J', 'name': 'J', 'lat': 40.6900, 'lng': -73.9900},
+        {'id': 'K', 'name': 'K', 'lat': 40.7570, 'lng': -73.9550},
     ],
     'edges': [
         {'u': 'A', 'v': 'B', 'weight': 5.2}, {'u': 'A', 'v': 'D', 'weight': 3.1},
@@ -48,21 +47,21 @@ class Graph:
 
     def dijkstra(self, src, dst):
         dist = {n: float('inf') for n in self.nodes}
-        prev = {n: None for n in self.nodes}
-        dist[src] = 0
-        pq = [(0, src)]
+        prev = {n: None for n in self.nodes}  # Keeps track of the previous node on the shortest path to reconstruct it later.
+        dist[src] = 0  # Distance from source to itself is 0
+        pq = [(0, src)] # min-heap to get the node with the current shortest distance
         while pq:
-            d, n = heapq.heappop(pq)
-            if n == dst: break
-            for nb in self.adj[n]:
-                nd = d + nb['weight']
-                if nd < dist[nb['node']]:
+            d, n = heapq.heappop(pq)  # smallest tentative distance d from the priority queue.
+            if n == dst: break  # if we reached the destination no need of searching more
+            for nb in self.adj[n]:  # loop over all neighbours
+                nd = d + nb['weight']  # add the current weight to the distance needed to get to the current node
+                if nd < dist[nb['node']]:  # if it is shorter than the best we upadate our best route
                     dist[nb['node']] = nd
                     prev[nb['node']] = n
-                    heapq.heappush(pq, (nd, nb['node']))
+                    heapq.heappush(pq, (nd, nb['node']))  # add it to the min heap
         path, cur = [], dst
         while cur:
-            path.insert(0, cur)
+            path.insert(0, cur) # path reconstruction from prev
             cur = prev[cur]
         return {'distance': dist[dst], 'path': path}
 
@@ -124,17 +123,21 @@ class CarpoolSimulator:
     
     def _find_best_pool(self, req):
         best = None
+        # we loop through all the drivers who are currently en-route and have capacity left
         for d in [x for x in self.drivers if x['status'] == 'en-route' and len(x['passengers']) < self.CAPACITY]:
+            # we store the current stops, distance and passengers
             base_stops = [d['location']] + [p['source'] for p in d['passengers']] + [p['destination'] for p in d['passengers']]
             base_distance = self.graph.route(base_stops)['distance']
-            passengers = d['passengers'] + [req]
+            passengers = d['passengers'] + [req]  # consider what will happen if we add the passenger
 
-            # Generate valid pickup/drop permutations
+            # Generate valid pickup/drop permutations like A_P, A_D, B_P, B_D
             pts = []
             for p in passengers:
+                # create the pickup point and dropping point for each passengers
                 pts.append((p['source'], f"{p['userId']}_P"))
                 pts.append((p['destination'], f"{p['userId']}_D"))
 
+            # permutate over all the valid pick-up dropping sequneces
             for perm in itertools.permutations(pts):
                 seen, seq, valid = set(), [], True
                 for node, tag in perm:
@@ -148,7 +151,7 @@ class CarpoolSimulator:
                 new_route = self.graph.route(seq)
                 if new_route['distance'] == float('inf'): continue
                 detour_ratio = (new_route['distance'] - base_distance) / max(base_distance, 0.1)
-                if detour_ratio <= self.MAX_DETOUR:
+                if detour_ratio <= self.MAX_DETOUR: # we are checking if the detour is within 30%   
                     if not best or new_route['distance'] < best['route']['distance']:
                         best = {'driver': d, 'route': new_route, 'stops': seq, 'detour': detour_ratio}
         return best
@@ -164,7 +167,7 @@ class CarpoolSimulator:
         return {'driver': best, 'route': route}
 
     def _match_waiting_requests(self, req):
-        """Try pooling with waiting riders having overlapping routes."""
+        # overlap = number of shared nodes​ / length of shorter route 
         def route_overlap(r1, r2):
             s1, s2 = set(r1['path']), set(r2['path'])
             return len(s1 & s2) / max(1, min(len(s1), len(s2)))
@@ -211,7 +214,7 @@ class CarpoolSimulator:
             return {'success': False, 'message': 'Missing data'}
         req = {'id': f'R-{random.randint(1000,9999)}', 'userId': uid, 'source': src, 'destination': dst}
 
-        # 1️⃣ Try to pool with existing drivers
+        # Try to pool with existing drivers
         pool = self._find_best_pool(req)
         if pool:
             d = pool['driver']
@@ -221,12 +224,12 @@ class CarpoolSimulator:
             self.history.append({'type': 'Pooled', 'driver': d['id'], 'riders': [p['userId'] for p in d['passengers']], 'distance': pool['route']['distance']})
             return {'success': True, 'message': f"Pooled with {d['id']} (detour {pool['detour']*100:.1f}%)", 'assigned_route': pool['route']}
 
-        # 2️⃣ Try pooling with waiting riders
+        # Try pooling with waiting riders
         pair = self._match_waiting_requests(req)
         if pair:
             return pair
 
-        # 3️⃣ Otherwise assign idle driver
+        # Otherwise assign idle driver
         idle = self._find_idle_driver(req)
         if idle:
             d = idle['driver']
@@ -237,11 +240,43 @@ class CarpoolSimulator:
         self.requests.append(req)
         return {'success': False, 'message': 'No drivers available; added to waiting list.'}
 
-    def complete(self, did):
-        d = next((x for x in self.drivers if x['id'] == did), None)
-        if not d: return {'success': False, 'message': 'Driver not found'}
-        d.update({'status': 'idle', 'passengers': [], 'stops': []})
-        return {'success': True, 'message': f'{did} is now idle.'}
+    def complete(self, driver_id):
+        driver = next((d for d in self.drivers if d['id'] == driver_id), None)
+        if not driver:
+            return {"success": False, "message": f"Driver {driver_id} not found."}
+
+        if driver['status'] != 'en-route':
+            return {"success": False, "message": f"{driver_id} is not currently on a ride."}
+
+        # Determine the final node
+        if driver.get('stops'):
+            final_node = driver['stops'][-1]  # use last stop as final destination
+        elif driver.get('passengers'):
+            # fallback if stops are empty, use last passenger destination
+            final_node = driver['passengers'][-1]['destination']
+        else:
+            return {"success": False, "message": "Final destination not found for this ride."}
+
+        # Update driver state
+        driver['location'] = final_node
+        driver['status'] = 'idle'
+        driver['passengers'] = []
+        driver['stops'] = []
+
+        # Optional: log to ride history
+        self.history.append({
+            'type': 'Completed',
+            'driver': driver_id,
+            'riders': [],
+            'distance': 0
+        })
+
+        loc_name = self.graph.nodes[final_node]['name']
+        return {
+            "success": True,
+            "message": f"{driver_id} completed the ride and is now idle at {loc_name}.",
+        }
+
 
 app = Flask(__name__)
 CORS(app)
@@ -263,5 +298,5 @@ def complete():
     return jsonify({**res, 'newState': sim.status()})
 
 if __name__ == '__main__':
-    print("✅ Smart Pooling Backend running on http://127.0.0.1:5000")
+    print(" Smart Pooling Backend running on http://127.0.0.1:5000")
     app.run(port=5000, debug=True)
